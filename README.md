@@ -47,14 +47,14 @@ function Users() {
   );
 
   if (isLoading) return <p>Loading…</p>;
-  if (error) return <p>Error: {error}</p>;
+  if (error) return <p>Error: {error.message}</p>;
   return <ul>{data.map((u) => <li key={u.id}>{u.name}</li>)}</ul>;
 }
 ```
 
 **Options:** `initialData`, `interval` (poll while the tab is active), `enabled`.
 
-**Result:** `data`, `error`, `requestId`, `isLoading` (initial load),
+**Result:** `data`, `error`, `isLoading` (initial load),
 `isRefetching` (background refresh), `isFetching` (either), `refetch`.
 
 Polling pauses when the tab is hidden or you go offline, and picks back up
@@ -89,11 +89,11 @@ You can also call `invalidate(['admin'])` directly - it refetches every
 active query whose key starts with `['admin', ...]` (e.g. `['admin', 'users']`,
 `['admin', 'tenants']`). Prefix matching keeps things ergonomic.
 
-## Errors with request IDs
+## Typing errors
 
-If your fetcher rejects with an object that has a `requestId` property, that
-ID is surfaced on the query result so you can show it to your users for
-support tickets:
+Whatever your fetcher or mutator throws lands in `error` as-is — no
+normalization, no wrapping. By default `error` is typed as `Error | null`,
+but you can narrow it to your own class via the second generic:
 
 ```ts
 class ApiError extends Error {
@@ -101,13 +101,15 @@ class ApiError extends Error {
   // …
 }
 
-const { error, requestId } = useQuery(['x'], () => apiFetch('/x'));
-// requestId === '<server-issued-id>' when the server returned one
+const { error } = useQuery<User[], ApiError>(['users'], fetchUsers);
+// error is ApiError | null — error?.requestId is yours to use
 ```
 
-That's it for built-in conventions. Knoten stays out of your way - there's
-no built-in `fetch` wrapper, no CSRF handling, no retry logic. Bring your
-own; Knoten will happily get along with it.
+The same works for `useMutation<Data, Vars, ApiError>(…)`.
+
+Knoten stays out of your way - there's no built-in `fetch` wrapper, no
+CSRF handling, no retry logic. Bring your own; Knoten will happily get
+along with it.
 
 ## Contributing
 

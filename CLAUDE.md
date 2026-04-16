@@ -31,8 +31,8 @@ bun run release:major    # Bump major + …
 
 Exports live in `src/index.ts` and must stay stable:
 
-- `useQuery(key, fetcher, options?)` → `{ data, error, requestId, isLoading, isRefetching, isFetching, refetch }`
-- `useMutation(mutator, options?)` → `{ mutate, isLoading, error, requestId, reset }`
+- `useQuery<T, E = Error>(key, fetcher, options?)` → `{ data, error, isLoading, isRefetching, isFetching, refetch }`
+- `useMutation<T, V = void, E = Error>(mutator, options?)` → `{ mutate, isLoading, error, reset }`
 - `invalidate(keyPrefix)` - refetches every active query whose key starts with `keyPrefix`
 
 Types are also exported: `Fetcher`, `UseQueryOptions`, `UseQueryResult`,
@@ -56,11 +56,13 @@ deliberately tiny.
 `dist/index.js`. No CJS build, no Node-specific code. If something needs
 `document` or `window`, it must check for it (see `isBrowserActive()`).
 
-### 3. Errors are matched structurally, not by class
+### 3. Errors are passed through unchanged (except `AbortError`)
 
-`extractError()` in `src/query.ts` checks for `requestId` + `message`
-properties - no `instanceof ApiError`, no class import. This keeps Knoten
-decoupled from any specific HTTP-error class. Don't introduce one here.
+Whatever the fetcher/mutator throws lands in `error` as-is, typed by the
+consumer-supplied `E` generic (default `Error`). The only exception:
+`AbortError` from aborted in-flight requests is swallowed, because aborts
+aren't real errors. Don't add an error class, normalization layer, or
+extractor here - Knoten stays decoupled from any specific error shape.
 
 ### 4. Generation counter + AbortController guard every fetch
 

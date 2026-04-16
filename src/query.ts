@@ -7,8 +7,7 @@ import { create } from 'zustand';
 
 type QueryEntry = {
   data: unknown;
-  error: string | null;
-  requestId: string | null;
+  error: unknown;
   isFetching: boolean;
 };
 
@@ -21,7 +20,6 @@ type CacheState = {
 const EMPTY_ENTRY: QueryEntry = {
   data: undefined,
   error: null,
-  requestId: null,
   isFetching: false,
 };
 
@@ -40,22 +38,6 @@ const useCacheStore = create<CacheState>((set, get) => ({
 // ============================================================================
 // ERROR HELPERS
 // ============================================================================
-
-function extractError(err: unknown): { message: string; requestId: string | null } {
-  if (
-    err &&
-    typeof err === 'object' &&
-    'requestId' in err &&
-    'message' in err
-  ) {
-    const e = err as { message: unknown; requestId: unknown };
-    return {
-      message: typeof e.message === 'string' ? e.message : String(e.message),
-      requestId: typeof e.requestId === 'string' ? e.requestId : null,
-    };
-  }
-  return { message: err instanceof Error ? err.message : String(err), requestId: null };
-}
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError';
@@ -107,10 +89,9 @@ export type UseQueryOptions<T> = {
   enabled?: boolean;
 };
 
-export type UseQueryResult<T> = {
+export type UseQueryResult<T, E = Error> = {
   data: T | undefined;
-  error: string | null;
-  requestId: string | null;
+  error: E | null;
   /** True when a request is in flight AND no data exists yet (initial load). */
   isLoading: boolean;
   /** True when a request is in flight AND data already exists (background refresh). */
@@ -120,11 +101,11 @@ export type UseQueryResult<T> = {
   refetch: () => Promise<void>;
 };
 
-export function useQuery<T>(
+export function useQuery<T, E = Error>(
   key: unknown[],
   fetcher: Fetcher<T>,
   options?: UseQueryOptions<T>
-): UseQueryResult<T> {
+): UseQueryResult<T, E> {
   const serialized = serializeKey(key);
   const enabled = options?.enabled ?? true;
 
@@ -146,16 +127,15 @@ export function useQuery<T>(
     controllerRef.current = controller;
     const myGen = ++generationRef.current;
 
-    setEntry(serialized, { isFetching: true, error: null, requestId: null });
+    setEntry(serialized, { isFetching: true, error: null });
 
     try {
       const data = await fetcherRef.current(controller.signal);
       if (myGen !== generationRef.current) return; // stale
-      setEntry(serialized, { data, isFetching: false, error: null, requestId: null });
+      setEntry(serialized, { data, isFetching: false, error: null });
     } catch (err) {
       if (myGen !== generationRef.current || isAbortError(err)) return; // stale or aborted
-      const { message, requestId } = extractError(err);
-      setEntry(serialized, { isFetching: false, error: message, requestId });
+      setEntry(serialized, { isFetching: false, error: err });
     }
   }, [serialized, setEntry]);
 
@@ -183,7 +163,6 @@ export function useQuery<T>(
         data: options.initialData,
         isFetching: false,
         error: null,
-        requestId: null,
       });
       return;
     }
@@ -255,8 +234,7 @@ export function useQuery<T>(
 
   return {
     data: (entry?.data as T) ?? options?.initialData,
-    error: entry?.error ?? null,
-    requestId: entry?.requestId ?? null,
+    error: (entry?.error as E | null) ?? null,
     isLoading: isFetching && !hasData,
     isRefetching: isFetching && hasData,
     isFetching,
@@ -268,24 +246,23 @@ export function useQuery<T>(
 // useMutation
 // ============================================================================
 
-export type UseMutationOptions<T> = {
+export type UseMutationOptions<T, E = Error> = {
   invalidates?: unknown[];
   onSuccess?: (data: T) => void;
-  onError?: (error: string) => void;
+  onError?: (error: E) => void;
 };
 
-export type UseMutationResult<T, V> = {
+export type UseMutationResult<T, V, E = Error> = {
   mutate: (variables: V) => Promise<T | undefined>;
   isLoading: boolean;
-  error: string | null;
-  requestId: string | null;
+  error: E | null;
   reset: () => void;
 };
 
-export function useMutation<T, V = void>(
+export function useMutation<T, V = void, E = Error>(
   mutator: (variables: V) => Promise<T>,
-  options?: UseMutationOptions<T>
-): UseMutationResult<T, V> {
+  options?: UseMutationOptions<T, E>
+): UseMutationResult<T, V, E> {
   const setEntry = useCacheStore((s) => s.set);
   const mutationKey = useId();
 
@@ -293,19 +270,18 @@ export function useMutation<T, V = void>(
 
   const mutate = useCallback(
     async (variables: V): Promise<T | undefined> => {
-      setEntry(mutationKey, { isFetching: true, error: null, requestId: null });
+      setEntry(mutationKey, { isFetching: true, error: null });
       try {
         const data = await mutator(variables);
-        setEntry(mutationKey, { isFetching: false, error: null, requestId: null, data });
+        setEntry(mutationKey, { isFetching: false, error: null, data });
         if (options?.invalidates) {
           invalidate(options.invalidates);
         }
         options?.onSuccess?.(data);
         return data;
       } catch (err) {
-        const { message, requestId } = extractError(err);
-        setEntry(mutationKey, { isFetching: false, error: message, requestId });
-        options?.onError?.(message);
+        setEntry(mutationKey, { isFetching: false, error: err });
+        options?.onError?.(err as E);
         return undefined;
       }
     },
@@ -313,14 +289,13 @@ export function useMutation<T, V = void>(
   );
 
   const reset = useCallback(() => {
-    setEntry(mutationKey, { isFetching: false, error: null, requestId: null });
+    setEntry(mutationKey, { isFetching: false, error: null });
   }, [mutationKey, setEntry]);
 
   return {
     mutate,
     isLoading: entry?.isFetching ?? false,
-    error: entry?.error ?? null,
-    requestId: entry?.requestId ?? null,
+    error: (entry?.error as E | null) ?? null,
     reset,
   };
 }
