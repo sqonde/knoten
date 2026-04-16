@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useId } from 'react';
 import { create } from 'zustand';
 
 // ============================================================================
@@ -287,7 +287,7 @@ export function useMutation<T, V = void>(
   options?: UseMutationOptions<T>
 ): UseMutationResult<T, V> {
   const setEntry = useCacheStore((s) => s.set);
-  const mutationKey = useRef(`__mutation_${Date.now()}_${Math.random()}`).current;
+  const mutationKey = useId();
 
   const entry = useCacheStore((s) => s.entries[mutationKey]);
 
