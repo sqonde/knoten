@@ -1,6 +1,6 @@
 {
   "name": "@sqonde/knoten",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "Minimal React data-fetching hooks: useQuery, useMutation, invalidate.",
   "type": "module",
   "main": "./dist/index.js",
