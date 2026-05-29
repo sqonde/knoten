@@ -189,6 +189,17 @@ export function useQuery<T, E = Error>(
     };
   }, [setEntry]);
 
+  // Abort the in-flight request when the query becomes disabled, and release its
+  // entry. Mirrors the unmount cleanup; the generation bump drops any late response.
+  useEffect(() => {
+    if (enabled) return;
+    controllerRef.current?.abort();
+    generationRef.current++;
+    const k = inFlightKeyRef.current;
+    if (k !== null) setEntry(k, { isFetching: false });
+    inFlightKeyRef.current = null;
+  }, [enabled, setEntry]);
+
   // Initial fetch
   useEffect(() => {
     if (!enabled) return;

@@ -142,6 +142,31 @@ describe('useQuery — abandoned requests', () => {
     const aEntry = __internals.cacheStore.getState().entries['["check","A"]'];
     expect(aEntry?.isFetching).toBe(false); // pre-fix: stuck true forever
   });
+
+  test('regression (E): disabling a query aborts the in-flight request', async () => {
+    let signal: AbortSignal | undefined;
+    const d = deferred<string>();
+    const fetcher = (s?: AbortSignal) => {
+      signal = s;
+      return d.promise;
+    };
+    const { result, rerender } = renderHook(
+      ({ on }) => useQuery(['toggle'], fetcher, { enabled: on }),
+      { initialProps: { on: true } }
+    );
+
+    await waitFor(() => expect(signal).toBeDefined());
+    rerender({ on: false }); // disable mid-flight
+    expect(signal?.aborted).toBe(true);
+
+    // A response that lands after disabling must NOT populate the cache.
+    await act(async () => {
+      d.resolve('late');
+      await d.promise;
+      await Promise.resolve();
+    });
+    expect(result.current.data).toBeUndefined();
+  });
 });
 
 describe('useMutation — baseline', () => {
