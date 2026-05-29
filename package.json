@@ -23,8 +23,9 @@
     "build": "bun build src/index.ts --target=browser --outdir=dist --external react --external zustand && tsc -p tsconfig.build.json",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json",
+    "verify:dist": "bun -e \"const m = await import('./dist/index.js'); for (const n of ['useQuery','useMutation','invalidate']) if (typeof m[n] !== 'function') throw new Error('dist export missing or not a function: ' + n); console.log('dist exports OK');\"",
     "format": "prettier --write src",
-    "prepublishOnly": "bun run build",
+    "prepublishOnly": "bun run build && bun run verify:dist",
     "release:patch": "bun pm version patch && git push --follow-tags",
     "release:minor": "bun pm version minor && git push --follow-tags",
     "release:major": "bun pm version major && git push --follow-tags"
