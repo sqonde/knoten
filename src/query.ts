@@ -15,6 +15,7 @@ type CacheState = {
   entries: Record<string, QueryEntry>;
   set: (key: string, update: Partial<QueryEntry>) => void;
   get: (key: string) => QueryEntry | undefined;
+  delete: (key: string) => void;
 };
 
 const EMPTY_ENTRY: QueryEntry = {
@@ -33,6 +34,12 @@ const useCacheStore = create<CacheState>((set, get) => ({
       },
     })),
   get: (key) => get().entries[key],
+  delete: (key) =>
+    set((state) => {
+      if (!(key in state.entries)) return state; // no-op → no re-render
+      const { [key]: _removed, ...rest } = state.entries;
+      return { entries: rest };
+    }),
 }));
 
 // ============================================================================
@@ -274,9 +281,15 @@ export function useMutation<T, V = void, E = Error>(
   options?: UseMutationOptions<T, E>
 ): UseMutationResult<T, V, E> {
   const setEntry = useCacheStore((s) => s.set);
+  const deleteEntry = useCacheStore((s) => s.delete);
   const mutationKey = useId();
 
   const entry = useCacheStore((s) => s.entries[mutationKey]);
+
+  // Mutation entries are keyed by a per-instance useId(), so drop ours on
+  // unmount - otherwise the store grows without bound as mutation-bearing
+  // components (dialogs, row actions) mount and unmount.
+  useEffect(() => () => deleteEntry(mutationKey), [mutationKey, deleteEntry]);
 
   const mutate = useCallback(
     async (variables: V): Promise<T | undefined> => {

@@ -140,6 +140,20 @@ describe('useMutation — baseline', () => {
     expect(result.current.error).toBeInstanceOf(Error);
     expect(onError).toHaveBeenCalledTimes(1);
   });
+
+  test('regression (C): the mutation entry is removed from the store on unmount', async () => {
+    const entryCount = () => Object.keys(__internals.cacheStore.getState().entries).length;
+    expect(entryCount()).toBe(0);
+
+    const { result, unmount } = renderHook(() => useMutation(async () => 'done'));
+    await act(async () => {
+      await result.current.mutate();
+    });
+    expect(entryCount()).toBe(1); // stored under this instance's useId
+
+    unmount();
+    expect(entryCount()).toBe(0); // pre-fix: leaks forever
+  });
 });
 
 describe('invalidate — baseline (end to end through React)', () => {
