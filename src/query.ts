@@ -309,6 +309,10 @@ export type UseMutationResult<T, V, E = Error> = {
   mutate: (variables: V) => Promise<T | undefined>;
   isLoading: boolean;
   error: E | null;
+  /** The last successful result, or undefined before the first success / after reset(). */
+  data: T | undefined;
+  /** True once a mutation has succeeded and has not been reset or errored since. */
+  isSuccess: boolean;
   reset: () => void;
 };
 
@@ -348,13 +352,15 @@ export function useMutation<T, V = void, E = Error>(
   );
 
   const reset = useCallback(() => {
-    setEntry(mutationKey, { isFetching: false, error: null });
+    setEntry(mutationKey, { isFetching: false, error: null, data: undefined });
   }, [mutationKey, setEntry]);
 
   return {
     mutate,
     isLoading: entry?.isFetching ?? false,
     error: (entry?.error as E | null) ?? null,
+    data: entry?.data as T | undefined,
+    isSuccess: entry?.data !== undefined && !entry?.error,
     reset,
   };
 }

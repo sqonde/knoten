@@ -229,6 +229,22 @@ describe('useMutation — baseline', () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
+  test('feature (L): exposes data and isSuccess; reset() clears them', async () => {
+    const { result } = renderHook(() => useMutation(async (n: number) => n + 1));
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isSuccess).toBe(false);
+
+    await act(async () => {
+      await result.current.mutate(41);
+    });
+    expect(result.current.data).toBe(42);
+    expect(result.current.isSuccess).toBe(true);
+
+    act(() => result.current.reset());
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isSuccess).toBe(false);
+  });
+
   test('regression (C): the mutation entry is removed from the store on unmount', async () => {
     const entryCount = () => Object.keys(__internals.cacheStore.getState().entries).length;
     expect(entryCount()).toBe(0);
