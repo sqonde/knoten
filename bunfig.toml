@@ -1,0 +1,4 @@
+[test]
+# Register a happy-dom global environment before tests run, so the hook-level
+# tests can render React via @testing-library/react.
+preload = ["./happydom.ts"]
