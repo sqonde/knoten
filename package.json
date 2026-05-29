@@ -22,6 +22,7 @@
   "scripts": {
     "build": "bun build src/index.ts --target=browser --outdir=dist --external react --external zustand && tsc -p tsconfig.build.json",
     "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json",
     "format": "prettier --write src",
     "prepublishOnly": "bun run build",
     "release:patch": "bun pm version patch && git push --follow-tags",
