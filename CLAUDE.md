@@ -33,7 +33,7 @@ bun run release:major    # Bump major + …
 Exports live in `src/index.ts` and must stay stable:
 
 - `useQuery<T, E = Error>(key, fetcher, options?)` → `{ data, error, isLoading, isRefetching, isFetching, refetch }`
-- `useMutation<T, V = void, E = Error>(mutator, options?)` → `{ mutate, isLoading, error, reset }`
+- `useMutation<T, V = void, E = Error>(mutator, options?)` → `{ mutate, isLoading, error, data, isSuccess, reset }`
 - `invalidate(keyPrefix)` - refetches every active query whose key starts with `keyPrefix`
 
 Types are also exported: `Fetcher`, `UseQueryOptions`, `UseQueryResult`,
@@ -69,7 +69,12 @@ extractor here - Knoten stays decoupled from any specific error shape.
 
 Each call to `refetch()` bumps `generationRef`, aborts the previous in-flight
 request, and ignores any response whose generation no longer matches. Don't
-remove this - it's what makes rapid invalidations and prop changes safe.
+remove this - it's what makes rapid invalidations and prop changes safe. The
+guard is **per-hook-instance** (`generationRef`/`controllerRef` are refs): it
+protects a hook against its own stale/aborted responses, not against two
+mounted hooks writing the same shared key (benign by the same-key → same-data
+convention). When a request is abandoned (key change, `enabled: false`,
+unmount) its entry's `isFetching` is released so the key can't get stuck.
 
 ### 5. Polling is visibility- and online-aware
 
@@ -99,6 +104,24 @@ The test deps (`@testing-library/*`, `react-dom`, `@happy-dom/*`) are
 devDependencies and never ship (`files` is just `dist`), so invariant #1
 still holds for the published package. Add a hook test for every
 behavioural change.
+
+### 7. The cache is permanent for the page's lifetime
+
+Entries are created on first use and never evicted - no TTL, no GC. This is
+the intended cache for stable, low-cardinality keys. Be wary of unbounded /
+parameterized keys like `['search', term]`, which grow the store without
+limit. (`useMutation` entries are the exception: keyed by `useId()`, they are
+deleted on unmount so they don't leak.)
+
+### 8. `initialData` seeds the cache and suppresses the initial fetch
+
+When `initialData` is given, the entry is seeded with it and the automatic
+initial fetch is skipped - on mount *and* on the first enable. It is treated
+as already-fetched data, not a placeholder a fetch will replace. Consumers
+who want a real fetch after enabling should `refetch()` / `invalidate()`. A
+query with no loaded data (no entry, or an entry abandoned mid-flight) does
+refetch on mount / key-change / re-enable; entries that hold data or an error
+are reused (cache-first, no auto-retry).
 
 ## Commit + release conventions
 
