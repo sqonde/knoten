@@ -167,6 +167,31 @@ describe('useQuery — abandoned requests', () => {
     });
     expect(result.current.data).toBeUndefined();
   });
+
+  test('regression (gate): a query refetches after its request was abandoned (modal reopen)', async () => {
+    let calls = 0;
+    const pending: ReturnType<typeof deferred<string>>[] = [];
+    const fetcher = () => {
+      calls += 1;
+      const d = deferred<string>();
+      pending.push(d);
+      return d.promise;
+    };
+    const { result, rerender } = renderHook(
+      ({ open }) => useQuery(['channels'], fetcher, { enabled: open }),
+      { initialProps: { open: false } }
+    );
+
+    expect(calls).toBe(0); // disabled → no fetch
+    rerender({ open: true }); // open the modal
+    await waitFor(() => expect(calls).toBe(1));
+    rerender({ open: false }); // close fast → aborts the in-flight request
+    rerender({ open: true }); // reopen → must refetch, not stay empty
+
+    await waitFor(() => expect(calls).toBe(2)); // pre-fix: stuck at 1 forever
+    act(() => pending[1]!.resolve('channels-data'));
+    await waitFor(() => expect(result.current.data).toBe('channels-data'));
+  });
 });
 
 describe('useMutation — baseline', () => {

@@ -211,7 +211,13 @@ export function useQuery<T, E = Error>(
       });
       return;
     }
-    if (!entry) {
+    // Fetch when there's no entry, or the entry exists but never loaded data
+    // (e.g. a previous request was abandoned by a key change, disable, or
+    // unmount). Entries that already hold data or an error are reused -
+    // cache-first, with no automatic retry of errors.
+    const needsFetch =
+      !entry || (entry.data === undefined && entry.error === null && !entry.isFetching);
+    if (needsFetch) {
       refetch();
     }
   }, [serialized, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
