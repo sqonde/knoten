@@ -1,13 +1,20 @@
 import { describe, test, expect, afterEach, mock } from 'bun:test';
 import { renderHook, render, screen, waitFor, fireEvent, act, cleanup } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { useQuery, useMutation, invalidate, __internals } from './query';
 
 // End-to-end hook/component tests: real React + real Zustand store + controllable
 // fetchers. This is Knoten's own regression net — it lets us catch behaviour or
 // dependency-version changes here, without relying on a downstream consumer.
 
+/** Override the tab-visibility flag the polling effect reads. */
+function setHidden(value: boolean) {
+  Object.defineProperty(document, 'hidden', { value, configurable: true });
+}
+
 afterEach(() => {
   cleanup();
+  setHidden(false); // undo any per-test visibility override
   __internals.cacheStore.setState({ entries: {} });
   __internals.refetchRegistry.clear();
 });
@@ -335,5 +342,61 @@ describe('invalidate — baseline (end to end through React)', () => {
     await waitFor(() => expect(screen.getByText('a')).toBeDefined());
     fireEvent.click(screen.getByText('add'));
     await waitFor(() => expect(screen.getByText('b')).toBeDefined());
+  });
+});
+
+describe('useQuery — polling (visibility/online aware)', () => {
+  test('interval refetches repeatedly while the tab is visible', async () => {
+    let calls = 0;
+    renderHook(() => useQuery(['poll'], async () => ++calls, { interval: 20 }));
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(3), { timeout: 1000 });
+  });
+
+  test('does not poll while the tab is hidden', async () => {
+    setHidden(true);
+    let calls = 0;
+    renderHook(() => useQuery(['poll-hidden'], async () => ++calls, { interval: 20 }));
+
+    await waitFor(() => expect(calls).toBe(1)); // initial fetch is not visibility-gated
+    await new Promise((r) => setTimeout(r, 100)); // several intervals elapse
+    expect(calls).toBe(1); // …but polling never started
+  });
+
+  test('resumes with an immediate refetch when the tab becomes visible', async () => {
+    setHidden(true);
+    let calls = 0;
+    // Long interval so only the resume's immediate refetch lands in the window.
+    renderHook(() => useQuery(['poll-resume'], async () => ++calls, { interval: 10000 }));
+    await waitFor(() => expect(calls).toBe(1)); // initial only, hidden
+
+    act(() => {
+      setHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(calls).toBe(2)); // resume → immediate refetch
+  });
+});
+
+describe('useQuery — StrictMode', () => {
+  // Contract lock (not a fix regression): under React's dev StrictMode the
+  // mount effects run twice. Render through a real component so the
+  // double-invocation actually happens (renderHook's wrapper does not trigger
+  // it), and assert the query settles to data instead of getting stuck loading.
+  // Guards against a future React/version change breaking StrictMode-safety.
+  test('loads correctly under StrictMode double-invocation', async () => {
+    let calls = 0;
+    function View() {
+      const { data, isLoading } = useQuery(['strict'], async () => `loaded-${++calls}`);
+      return <span>{isLoading ? 'loading' : String(data)}</span>;
+    }
+    render(
+      <StrictMode>
+        <View />
+      </StrictMode>
+    );
+
+    await waitFor(() => expect(screen.getByText(/^loaded-/)).toBeDefined());
+    expect(screen.queryByText('loading')).toBeNull(); // not stuck
+    expect(calls).toBeGreaterThanOrEqual(2); // double-invocation really happened
   });
 });
