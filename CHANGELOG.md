@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-29
+
 ### Added
 
 - `useMutation` now returns `data` (the last successful result) and
@@ -86,7 +88,8 @@ Initial public release, extracted from the Messwerk dashboard.
 - Structural error extraction: objects with `{ requestId, message }` are
   surfaced without any class coupling.
 
-[Unreleased]: https://github.com/sqonde/knoten/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/sqonde/knoten/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/sqonde/knoten/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/sqonde/knoten/compare/v0.1.1...v1.0.0
 [0.1.1]: https://github.com/sqonde/knoten/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/sqonde/knoten/releases/tag/v0.1.0
