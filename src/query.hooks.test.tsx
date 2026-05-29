@@ -1,0 +1,196 @@
+import { describe, test, expect, afterEach, mock } from 'bun:test';
+import { renderHook, render, screen, waitFor, fireEvent, act, cleanup } from '@testing-library/react';
+import { useQuery, useMutation, invalidate, __internals } from './query';
+
+// End-to-end hook/component tests: real React + real Zustand store + controllable
+// fetchers. This is Knoten's own regression net — it lets us catch behaviour or
+// dependency-version changes here, without relying on a downstream consumer.
+
+afterEach(() => {
+  cleanup();
+  __internals.cacheStore.setState({ entries: {} });
+  __internals.refetchRegistry.clear();
+});
+
+/** A promise whose settlement we control, so aborts/timing are deterministic. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('useQuery — baseline', () => {
+  test('initial load: isLoading then data, with isFetching/isRefetching transitions', async () => {
+    const d = deferred<string>();
+    const { result } = renderHook(() => useQuery(['load'], () => d.promise));
+
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.isFetching).toBe(true);
+    expect(result.current.isRefetching).toBe(false);
+    expect(result.current.data).toBeUndefined();
+
+    act(() => d.resolve('value'));
+    await waitFor(() => expect(result.current.data).toBe('value'));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isFetching).toBe(false);
+  });
+
+  test('error is passed through unchanged (custom error class survives)', async () => {
+    class ApiError extends Error {
+      constructor(public status: number) {
+        super('boom');
+        this.name = 'ApiError';
+      }
+    }
+    const { result } = renderHook(() =>
+      useQuery<string, ApiError>(['err'], async () => {
+        throw new ApiError(503);
+      })
+    );
+
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(ApiError));
+    expect(result.current.error?.status).toBe(503);
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  test('AbortError from a superseded request never surfaces as error', async () => {
+    let first = true;
+    const second = deferred<string>();
+    const fetcher = (signal?: AbortSignal) => {
+      if (first) {
+        first = false;
+        return new Promise<string>((_resolve, reject) => {
+          signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          );
+        });
+      }
+      return second.promise;
+    };
+    const { result } = renderHook(() => useQuery(['abort'], fetcher));
+
+    // refetch() aborts the first in-flight request → its AbortError must be swallowed.
+    act(() => {
+      result.current.refetch();
+    });
+    act(() => second.resolve('ok'));
+    await waitFor(() => expect(result.current.data).toBe('ok'));
+    expect(result.current.error).toBeNull();
+  });
+
+  test('background refetch keeps data while isRefetching is true', async () => {
+    let calls = 0;
+    const hold = deferred<string>();
+    const fetcher = () => {
+      calls += 1;
+      return calls === 1 ? Promise.resolve('first') : hold.promise;
+    };
+    const { result } = renderHook(() => useQuery(['bg'], fetcher));
+    await waitFor(() => expect(result.current.data).toBe('first'));
+
+    act(() => {
+      result.current.refetch();
+    });
+    await waitFor(() => expect(result.current.isRefetching).toBe(true));
+    expect(result.current.data).toBe('first'); // retained during refresh
+    expect(result.current.isLoading).toBe(false);
+
+    act(() => hold.resolve('second'));
+    await waitFor(() => expect(result.current.data).toBe('second'));
+    expect(result.current.isRefetching).toBe(false);
+  });
+});
+
+describe('useMutation — baseline', () => {
+  test('mutate resolves with value, toggles isLoading, fires onSuccess', async () => {
+    const onSuccess = mock(() => {});
+    const { result } = renderHook(() =>
+      useMutation(async (n: number) => n * 2, { onSuccess })
+    );
+    expect(result.current.isLoading).toBe(false);
+
+    let returned: number | undefined;
+    await act(async () => {
+      returned = await result.current.mutate(21);
+    });
+    expect(returned).toBe(42);
+    expect(onSuccess).toHaveBeenCalledWith(42);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  test('mutate surfaces error and fires onError on throw', async () => {
+    const onError = mock(() => {});
+    const { result } = renderHook(() =>
+      useMutation(async () => {
+        throw new Error('nope');
+      }, { onError })
+    );
+
+    let returned: unknown = 'sentinel';
+    await act(async () => {
+      returned = await result.current.mutate();
+    });
+    expect(returned).toBeUndefined();
+    expect(result.current.error).toBeInstanceOf(Error);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('invalidate — baseline (end to end through React)', () => {
+  test('a mounted matching query refetches; a non-matching one does not', async () => {
+    let usersCalls = 0;
+    let metricsCalls = 0;
+    renderHook(() => useQuery(['users'], async () => `users-${++usersCalls}`));
+    renderHook(() => useQuery(['metrics'], async () => `metrics-${++metricsCalls}`));
+
+    await waitFor(() => expect(usersCalls).toBe(1));
+    await waitFor(() => expect(metricsCalls).toBe(1));
+
+    act(() => invalidate(['users']));
+    await waitFor(() => expect(usersCalls).toBe(2));
+    expect(metricsCalls).toBe(1); // untouched
+  });
+
+  test('component flow: mutate with invalidates refreshes the list', async () => {
+    const server = ['a'];
+    function List() {
+      const { data } = useQuery(['items'], async () => [...server]);
+      return (
+        <ul>
+          {(data ?? []).map((i) => (
+            <li key={i}>{i}</li>
+          ))}
+        </ul>
+      );
+    }
+    function AddButton() {
+      const { mutate } = useMutation(
+        async () => {
+          server.push('b');
+        },
+        { invalidates: ['items'] }
+      );
+      return (
+        <button type="button" onClick={() => mutate()}>
+          add
+        </button>
+      );
+    }
+    render(
+      <>
+        <List />
+        <AddButton />
+      </>
+    );
+
+    await waitFor(() => expect(screen.getByText('a')).toBeDefined());
+    fireEvent.click(screen.getByText('add'));
+    await waitFor(() => expect(screen.getByText('b')).toBeDefined());
+  });
+});
