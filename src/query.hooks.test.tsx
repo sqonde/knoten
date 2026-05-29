@@ -123,6 +123,27 @@ describe('useQuery — null handling', () => {
   });
 });
 
+describe('useQuery — abandoned requests', () => {
+  test('regression (B): changing key mid-flight aborts and releases the old key', async () => {
+    const signals = new Map<string, AbortSignal | undefined>();
+    const makeFetcher = (k: string) => (signal?: AbortSignal) => {
+      signals.set(k, signal);
+      return new Promise<string>(() => {}); // never settles on its own
+    };
+    const { rerender } = renderHook(({ k }) => useQuery(['check', k], makeFetcher(k)), {
+      initialProps: { k: 'A' },
+    });
+
+    await waitFor(() => expect(signals.has('A')).toBe(true));
+    rerender({ k: 'B' }); // switch before A resolves
+    await waitFor(() => expect(signals.has('B')).toBe(true));
+
+    expect(signals.get('A')?.aborted).toBe(true);
+    const aEntry = __internals.cacheStore.getState().entries['["check","A"]'];
+    expect(aEntry?.isFetching).toBe(false); // pre-fix: stuck true forever
+  });
+});
+
 describe('useMutation — baseline', () => {
   test('mutate resolves with value, toggles isLoading, fires onSuccess', async () => {
     const onSuccess = mock(() => {});

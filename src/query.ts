@@ -126,12 +126,23 @@ export function useQuery<T, E = Error>(
   const generationRef = useRef(0);
   // AbortController for the currently in-flight request
   const controllerRef = useRef<AbortController | null>(null);
+  // Key of the request currently in flight, so an abandoned request's entry can
+  // be released instead of being left stuck on isFetching:true.
+  const inFlightKeyRef = useRef<string | null>(null);
 
   const refetch = useCallback(async () => {
-    // Abort any in-flight request and bump generation
+    // Abort any in-flight request and bump generation. If that request was for a
+    // *different* key (a key change), release its entry so it doesn't stay stuck
+    // on isFetching:true. A same-key refetch (e.g. polling) is left alone - the
+    // new request sets isFetching again below.
+    const prevKey = inFlightKeyRef.current;
     controllerRef.current?.abort();
+    if (prevKey !== null && prevKey !== serialized) {
+      setEntry(prevKey, { isFetching: false });
+    }
     const controller = new AbortController();
     controllerRef.current = controller;
+    inFlightKeyRef.current = serialized;
     const myGen = ++generationRef.current;
 
     setEntry(serialized, { isFetching: true, error: null });
@@ -139,9 +150,11 @@ export function useQuery<T, E = Error>(
     try {
       const data = await fetcherRef.current(controller.signal);
       if (myGen !== generationRef.current) return; // stale
+      inFlightKeyRef.current = null;
       setEntry(serialized, { data, isFetching: false, error: null });
     } catch (err) {
       if (myGen !== generationRef.current || isAbortError(err)) return; // stale or aborted
+      inFlightKeyRef.current = null;
       setEntry(serialized, { isFetching: false, error: err });
     }
   }, [serialized, setEntry]);
@@ -164,13 +177,17 @@ export function useQuery<T, E = Error>(
     };
   }, [serialized, refetch]);
 
-  // Abort in-flight request on unmount
+  // Abort in-flight request on unmount, and release its entry so a later remount
+  // on the same key isn't left looking at a stuck isFetching:true.
   useEffect(() => {
     return () => {
       controllerRef.current?.abort();
       generationRef.current++; // invalidate any pending responses
+      const k = inFlightKeyRef.current;
+      if (k !== null) setEntry(k, { isFetching: false });
+      inFlightKeyRef.current = null;
     };
-  }, []);
+  }, [setEntry]);
 
   // Initial fetch
   useEffect(() => {
