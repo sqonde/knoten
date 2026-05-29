@@ -245,6 +245,16 @@ describe('useMutation — baseline', () => {
     expect(result.current.isSuccess).toBe(false);
   });
 
+  test('refactor (M): mutate keeps a stable identity across re-renders', () => {
+    const { result, rerender } = renderHook(() =>
+      // fresh inline mutator + options every render
+      useMutation(async () => 'x', { onSuccess: () => {}, invalidates: ['k'] })
+    );
+    const first = result.current.mutate;
+    rerender();
+    expect(result.current.mutate).toBe(first);
+  });
+
   test('regression (C): the mutation entry is removed from the store on unmount', async () => {
     const entryCount = () => Object.keys(__internals.cacheStore.getState().entries).length;
     expect(entryCount()).toBe(0);

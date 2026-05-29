@@ -326,6 +326,13 @@ export function useMutation<T, V = void, E = Error>(
 
   const entry = useCacheStore((s) => s.entries[mutationKey]);
 
+  // Read the latest mutator/options through refs so `mutate` stays referentially
+  // stable even when callers pass them inline (mirrors useQuery's fetcherRef).
+  const mutatorRef = useRef(mutator);
+  mutatorRef.current = mutator;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   // Mutation entries are keyed by a per-instance useId(), so drop ours on
   // unmount - otherwise the store grows without bound as mutation-bearing
   // components (dialogs, row actions) mount and unmount.
@@ -335,20 +342,21 @@ export function useMutation<T, V = void, E = Error>(
     async (variables: V): Promise<T | undefined> => {
       setEntry(mutationKey, { isFetching: true, error: null });
       try {
-        const data = await mutator(variables);
+        const data = await mutatorRef.current(variables);
         setEntry(mutationKey, { isFetching: false, error: null, data });
-        if (options?.invalidates) {
-          invalidate(options.invalidates);
+        const opts = optionsRef.current;
+        if (opts?.invalidates) {
+          invalidate(opts.invalidates);
         }
-        options?.onSuccess?.(data);
+        opts?.onSuccess?.(data);
         return data;
       } catch (err) {
         setEntry(mutationKey, { isFetching: false, error: err });
-        options?.onError?.(err as E);
+        optionsRef.current?.onError?.(err as E);
         return undefined;
       }
     },
-    [mutationKey, setEntry, mutator, options?.invalidates, options?.onSuccess, options?.onError]
+    [mutationKey, setEntry]
   );
 
   const reset = useCallback(() => {
