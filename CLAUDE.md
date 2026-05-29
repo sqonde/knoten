@@ -17,7 +17,8 @@ must stay drop-in compatible with how Messwerk uses it.
 
 ```bash
 bun install              # Install deps
-bun test                 # Run the unit tests (bun:test)
+bun test                 # Run unit + hook tests (bun:test + happy-dom)
+bun run typecheck        # tsc over the whole repo (src incl. tests)
 bun run build            # Build dist/index.js (ESM) + dist/index.d.ts
 bun run format           # Prettier
 bun run release:patch    # Bump patch + commit + tag + push (triggers npm publish)
@@ -77,12 +78,27 @@ Polling pauses when the tab is hidden and resumes (with an immediate
 refetch) when it returns. Don't add a "poll always" option - that's a
 footgun for users' batteries.
 
-### 6. Tests run without a DOM
+### 6. Behaviour is verified in-repo, with both unit and hook tests
 
-`src/query.test.ts` only exercises `serializeKey`, `isPrefixMatch`, and the
-`invalidate()` registry. Hook-level behaviour is covered downstream in
-Messwerk's integration tests. Keep this file dependency-free (no React, no
-DOM) so it stays fast.
+Two suites run under `bun test`:
+
+- `src/query.test.ts` - pure unit tests of the shipped `serializeKey`,
+  `isPrefixMatch`, and `isAbortError` (reached via the non-public
+  `__internals` export, so they can't drift from the real code). No DOM
+  needed.
+- `src/query.hooks.test.tsx` - end-to-end hook/component tests using
+  `@testing-library/react` on a happy-dom global (registered via
+  `bunfig.toml` → `happydom.ts`). They render the real hooks against the
+  real Zustand store and assert every behavioural guarantee: loading
+  states, error pass-through, abort on key-change/disable/unmount,
+  invalidation across siblings, and the mutation lifecycle.
+
+This is Knoten's own regression net - behaviour and dependency-version
+changes are caught **here**, not in a downstream consumer like Messwerk.
+The test deps (`@testing-library/*`, `react-dom`, `@happy-dom/*`) are
+devDependencies and never ship (`files` is just `dist`), so invariant #1
+still holds for the published package. Add a hook test for every
+behavioural change.
 
 ## Commit + release conventions
 
@@ -100,7 +116,9 @@ DOM) so it stays fast.
 
 - `src/index.ts` - public re-exports
 - `src/query.ts` - the entire library (cache store, `useQuery`, `useMutation`, `invalidate`)
-- `src/query.test.ts` - unit tests for serialization + invalidation registry
+- `src/query.test.ts` - pure unit tests (serialization, prefix, abort) via `__internals`
+- `src/query.hooks.test.tsx` - end-to-end hook/component tests (happy-dom + Testing Library)
+- `happydom.ts` / `bunfig.toml` - register the happy-dom test environment
 - `tsconfig.json` - editor/typecheck config
 - `tsconfig.build.json` - emits only `.d.ts` to `dist/`
 - `.github/workflows/ci.yml` - test + build on push/PR
