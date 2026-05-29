@@ -106,6 +106,23 @@ describe('useQuery — baseline', () => {
   });
 });
 
+describe('useQuery — null handling', () => {
+  test('regression (D): a fetched null is surfaced, not masked by initialData', async () => {
+    const { result } = renderHook(() =>
+      useQuery<string | null>(['nullable'], async () => null, { initialData: 'seed' })
+    );
+    // initialData seeds the cache and suppresses the initial fetch.
+    expect(result.current.data).toBe('seed');
+
+    // An explicit refetch resolves to null; null must now win (pre-fix: 'seed').
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.data).toBeNull();
+    expect(result.current.isFetching).toBe(false);
+  });
+});
+
 describe('useMutation — baseline', () => {
   test('mutate resolves with value, toggles isLoading, fires onSuccess', async () => {
     const onSuccess = mock(() => {});

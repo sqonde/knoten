@@ -250,7 +250,9 @@ export function useQuery<T, E = Error>(
   const isFetching = entry?.isFetching ?? (options?.initialData === undefined && enabled && !entry);
 
   return {
-    data: (entry?.data as T) ?? options?.initialData,
+    // Once an entry exists its data is authoritative - including a genuine
+    // `null` returned by the fetcher. initialData only fills in before then.
+    data: entry ? (entry.data as T) : options?.initialData,
     error: (entry?.error as E | null) ?? null,
     isLoading: isFetching && !hasData,
     isRefetching: isFetching && hasData,
