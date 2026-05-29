@@ -299,3 +299,18 @@ export function useMutation<T, V = void, E = Error>(
     reset,
   };
 }
+
+// ============================================================================
+// TEST SEAM
+// ============================================================================
+
+// Internal handles for the test suite only. NOT re-exported from src/index.ts,
+// so this is not part of the public API. Lets the in-repo tests exercise the
+// real serialization/prefix/abort logic and inspect the cache + registry.
+export const __internals = {
+  serializeKey,
+  isPrefixMatch,
+  isAbortError,
+  refetchRegistry,
+  cacheStore: useCacheStore,
+};
