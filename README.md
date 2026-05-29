@@ -52,7 +52,10 @@ function Users() {
 }
 ```
 
-**Options:** `initialData`, `interval` (poll while the tab is active), `enabled`.
+**Options:** `initialData`, `interval` (poll while the tab is active),
+`enabled` (default `true`). `initialData` seeds the cache as already-fetched
+data and skips the initial fetch — call `refetch()`/`invalidate()` if you want
+a real fetch afterwards.
 
 **Result:** `data`, `error`, `isLoading` (initial load),
 `isRefetching` (background refresh), `isFetching` (either), `refetch`.
@@ -84,6 +87,10 @@ function CreateUser() {
   );
 }
 ```
+
+**Result:** `mutate(variables)` (returns the result, or `undefined` on error),
+`isLoading`, `error`, `data` (the last successful result), `isSuccess`, and
+`reset()` (clears `error`, `data`, and loading state back to idle).
 
 You can also call `invalidate(['admin'])` directly - it refetches every
 active query whose key starts with `['admin', ...]` (e.g. `['admin', 'users']`,
