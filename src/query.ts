@@ -47,7 +47,7 @@ function isAbortError(err: unknown): boolean {
 // INVALIDATION REGISTRY
 // ============================================================================
 
-const refetchRegistry = new Map<string, () => Promise<void>>();
+const refetchRegistry = new Map<string, Set<() => Promise<void>>>();
 
 function serializeKey(key: unknown[]): string {
   return JSON.stringify(key);
@@ -61,9 +61,9 @@ function isPrefixMatch(prefix: string, candidate: string): boolean {
 
 export function invalidate(keyPrefix: unknown[]): void {
   const prefix = serializeKey(keyPrefix);
-  for (const [key, refetch] of refetchRegistry) {
+  for (const [key, refetchers] of refetchRegistry) {
     if (isPrefixMatch(prefix, key)) {
-      refetch();
+      for (const refetch of refetchers) refetch();
     }
   }
 }
@@ -139,11 +139,21 @@ export function useQuery<T, E = Error>(
     }
   }, [serialized, setEntry]);
 
-  // Register in invalidation registry
+  // Register in invalidation registry. One Set of refetchers per key, so two
+  // components sharing a key both stay registered (and a sibling unmounting
+  // doesn't unregister the survivors).
   useEffect(() => {
-    refetchRegistry.set(serialized, refetch);
+    let refetchers = refetchRegistry.get(serialized);
+    if (!refetchers) {
+      refetchers = new Set();
+      refetchRegistry.set(serialized, refetchers);
+    }
+    refetchers.add(refetch);
     return () => {
-      refetchRegistry.delete(serialized);
+      refetchers.delete(refetch);
+      if (refetchers.size === 0 && refetchRegistry.get(serialized) === refetchers) {
+        refetchRegistry.delete(serialized);
+      }
     };
   }, [serialized, refetch]);
 

@@ -157,6 +157,21 @@ describe('invalidate — baseline (end to end through React)', () => {
     expect(metricsCalls).toBe(1); // untouched
   });
 
+  test('regression (A): invalidation survives a same-key sibling unmounting', async () => {
+    let calls = 0;
+    const fetcher = async () => `v${++calls}`;
+    renderHook(() => useQuery(['shared'], fetcher)); // first instance (survivor)
+    const sibling = renderHook(() => useQuery(['shared'], fetcher)); // later instance
+
+    await waitFor(() => expect(calls).toBe(1)); // shared cache → one initial fetch
+    sibling.unmount(); // the later-registered instance leaves
+
+    const before = calls;
+    act(() => invalidate(['shared']));
+    // Survivor must still refetch (pre-fix: the registry entry was deleted → 0 refetches).
+    await waitFor(() => expect(calls).toBe(before + 1));
+  });
+
   test('component flow: mutate with invalidates refreshes the list', async () => {
     const server = ['a'];
     function List() {
