@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `useMutation` now returns `data` (the last successful result) and
+  `isSuccess`; `reset()` also clears `data`.
+
+### Fixed
+
+- `invalidate()` now reaches every mounted query sharing a key, and no longer
+  stops working for a query when a sibling using the same key unmounts.
+- A query whose request is abandoned by a key change, `enabled: false`, or
+  unmount no longer gets stuck on `isLoading`/`isRefetching`; it refetches
+  cleanly on the next mount, key change, or re-enable.
+- A disabled query now aborts its in-flight request instead of letting a late
+  response populate the cache.
+- A fetcher that resolves to `null` is surfaced as `null` instead of falling
+  back to `initialData`.
+- `useMutation` no longer leaks a cache entry on every mount/unmount cycle.
+
 ## [1.0.0] - 2026-04-16
 
 ### Changed (breaking)
